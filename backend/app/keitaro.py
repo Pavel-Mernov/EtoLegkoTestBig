@@ -40,7 +40,7 @@ class KeitaroClient:
         if isinstance(data, list):
             return data
         if isinstance(data, dict):
-            for key in ("items", "data", "offers", "campaigns", "groups", "domains", "traffic_sources"):
+            for key in ("items", "data", "offers", "campaigns", "streams", "groups", "domains", "traffic_sources"):
                 if isinstance(data.get(key), list):
                     return data[key]
         return []
@@ -59,6 +59,15 @@ class KeitaroClient:
             raise HTTPException(404, f"Keitaro offer {offer_id} was not found")
         return data
 
+    async def get_campaign(self, campaign_id: int) -> dict:
+        data = await self.request("GET", f"{settings.keitaro_campaigns_path}/{campaign_id}")
+        if not isinstance(data, dict) or not data.get("id"):
+            raise HTTPException(404, f"Keitaro campaign {campaign_id} was not found")
+        return data
+
+    async def get_campaign_streams(self, campaign_id: int) -> list[dict]:
+        return self.items(await self.request("GET", f"{settings.keitaro_campaigns_path}/{campaign_id}/streams"))
+
     async def _catalog_item(self, path: str, item_id: int, *, params: dict | None = None) -> dict:
         rows = self.items(await self.request("GET", path, params=params))
         match = next((row for row in rows if int(row.get("id", 0)) == item_id), None)
@@ -66,7 +75,7 @@ class KeitaroClient:
             raise HTTPException(502, f"Configured Keitaro catalog item {item_id} is missing at {path}")
         return match
 
-    async def create_campaign(self, name: str, country: str, offer_id: int, offer_name: str) -> dict:
+    async def create_campaign(self, name: str, country: str, offer_id: int) -> dict:
         # Groups, domains and traffic sources are read-only on the supplied test stand.
         group = await self._catalog_item(settings.keitaro_groups_path, settings.keitaro_group_id, params={"type": "campaigns"})
         source = await self._catalog_item(settings.keitaro_sources_path, settings.keitaro_source_id)
@@ -88,22 +97,33 @@ class KeitaroClient:
         campaign_id = int(campaign["id"])
 
         # The test stand exposes streams as a separate Admin API resource.
-        await self.request("POST", settings.keitaro_streams_path, json={
-            "campaign_id": campaign_id,
-            "name": "Geo GM" if country.upper() == "GM" else f"Geo {country.upper()}",
-            "type": "regular",
-            "schema": "redirect",
-            "action_type": "http",
-            "action_payload": "https://google.com",
-            "filters": [{"name": "country", "mode": "accept", "payload": [country.upper()]}],
-        })
-        await self.request("POST", settings.keitaro_streams_path, json={
-            "campaign_id": campaign_id,
-            "name": "Офферы",
-            "type": "default",
-            "schema": "landings",
-            "offers": [{"offer_id": offer_id, "share": 100, "state": "active"}],
-        })
+        try:
+            await self.request("POST", settings.keitaro_streams_path, json={
+                "campaign_id": campaign_id,
+                "name": f"Geo {country.upper()}",
+                "type": "regular",
+                "schema": "redirect",
+                "action_type": "http",
+                "action_payload": "https://google.com",
+                "filters": [{"name": "country", "mode": "accept", "payload": [country.upper()]}],
+            })
+            await self.request("POST", settings.keitaro_streams_path, json={
+                "campaign_id": campaign_id,
+                "name": "Офферы",
+                "type": "default",
+                "schema": "landings",
+                "offers": [{"offer_id": offer_id, "share": 100, "state": "active"}],
+            })
+        except HTTPException as exc:
+            # Avoid leaving a campaign with one or no streams if stream setup fails.
+            try:
+                await self.request("DELETE", f"{settings.keitaro_campaigns_path}/{campaign_id}")
+            except HTTPException as cleanup_error:
+                raise HTTPException(
+                    502,
+                    f"Campaign {campaign_id} was created but stream setup failed ({exc.detail}); cleanup also failed ({cleanup_error.detail}).",
+                ) from exc
+            raise
         return campaign
 
     async def update_campaign_offers(self, keitaro_id: int, offers: list[dict]) -> None:

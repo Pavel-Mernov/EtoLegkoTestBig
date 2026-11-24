@@ -17,12 +17,16 @@ class CampaignUpdate(BaseModel):
     country: str = Field(min_length=2, max_length=2)
 
 
+class CampaignImport(BaseModel):
+    keitaro_id: int = Field(gt=0)
+
+
 class OfferView(BaseModel):
     id: int
     keitaro_offer_id: int
     name: str
     position: int
-    weight: int
+    weight: float
 
     class Config:
         from_attributes = True
