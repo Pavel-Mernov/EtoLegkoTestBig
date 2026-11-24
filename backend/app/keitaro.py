@@ -66,7 +66,16 @@ class KeitaroClient:
         return data
 
     async def get_campaign_streams(self, campaign_id: int) -> list[dict]:
-        return self.items(await self.request("GET", f"{settings.keitaro_campaigns_path}/{campaign_id}/streams"))
+        streams = self.items(await self.request("GET", f"{settings.keitaro_campaigns_path}/{campaign_id}/streams"))
+        detailed = []
+        for stream in streams:
+            stream_id = stream.get("id")
+            if not stream_id:
+                detailed.append(stream)
+                continue
+            details = await self.request("GET", f"{settings.keitaro_streams_path}/{stream_id}")
+            detailed.append({**stream, **details} if isinstance(details, dict) else stream)
+        return detailed
 
     async def _catalog_item(self, path: str, item_id: int, *, params: dict | None = None) -> dict:
         rows = self.items(await self.request("GET", path, params=params))
@@ -126,7 +135,7 @@ class KeitaroClient:
             raise
         return campaign
 
-    async def update_campaign_offers(self, keitaro_id: int, offers: list[dict]) -> None:
+    async def update_campaign_offers(self, keitaro_id: int, offers: list[Any]) -> None:
         streams = self.items(await self.request("GET", f"{settings.keitaro_campaigns_path}/{keitaro_id}/streams"))
         landing = next((stream for stream in streams if stream.get("name") == "Офферы" or stream.get("type") == "default" or stream.get("schema") == "landings"), None)
         if not landing or not landing.get("id"):
@@ -134,7 +143,11 @@ class KeitaroClient:
             raise HTTPException(502, f"Could not find the campaign's offer stream in Keitaro. Streams: {stream_info}")
         payload = {
             "offers": [
-                {"offer_id": row.keitaro_offer_id, "share": row.weight, "state": "active"}
+                {
+                    "offer_id": row["offer_id"] if isinstance(row, dict) else row.keitaro_offer_id,
+                    "share": row["share"] if isinstance(row, dict) else row.weight,
+                    "state": "active",
+                }
                 for row in offers
             ]
         }

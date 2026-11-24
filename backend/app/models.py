@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -29,4 +29,5 @@ class CampaignOffer(Base):
     name: Mapped[str] = mapped_column(String(255))
     position: Mapped[int] = mapped_column(Integer, default=0)
     weight: Mapped[float] = mapped_column(Float, default=100)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     campaign: Mapped[Campaign] = relationship(back_populates="offers")

@@ -8,10 +8,6 @@ class CampaignCreate(BaseModel):
     offer_id: int = Field(gt=0)
 
 
-class OfferAdd(BaseModel):
-    offer_id: int = Field(gt=0)
-
-
 class CampaignUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     country: str = Field(min_length=2, max_length=2)
@@ -21,12 +17,17 @@ class CampaignImport(BaseModel):
     keitaro_id: int = Field(gt=0)
 
 
+class OfferPush(BaseModel):
+    offer_ids: list[int]
+
+
 class OfferView(BaseModel):
     id: int
     keitaro_offer_id: int
     name: str
     position: int
     weight: float
+    archived: bool
 
     class Config:
         from_attributes = True
